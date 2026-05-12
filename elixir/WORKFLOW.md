@@ -33,7 +33,7 @@ coding_tool:
 codex:
   command: CODEX_HOME=/Users/guoxunpan/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=low app-server
   approval_policy: never
-  stall_timeout_ms: 60000
+  stall_timeout_ms: 180000
   thread_sandbox: danger-full-access
   turn_sandbox_policy:
     type: dangerFullAccess
