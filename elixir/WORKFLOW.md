@@ -19,13 +19,7 @@ workspace:
   root: ~/code/cognition-workspaces
 hooks:
   after_create: |
-    rsync -a --delete \
-      --exclude '.git' \
-      --exclude '.claude' \
-      --exclude 'elixir/_build' \
-      --exclude 'elixir/deps' \
-      --exclude 'elixir/log' \
-      /Users/guoxunpan/code/cognition/ .
+    git clone /Users/guoxunpan/code/cognition .
     if command -v mise >/dev/null 2>&1; then
       cd elixir && mise trust && mise exec -- mix deps.get
     fi
@@ -37,7 +31,7 @@ agent:
 coding_tool:
   kind: codex
 codex:
-  command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=xhigh app-server
+  command: CODEX_HOME=/Users/guoxunpan/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=xhigh app-server
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
