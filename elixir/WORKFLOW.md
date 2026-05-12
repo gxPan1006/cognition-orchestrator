@@ -31,7 +31,7 @@ agent:
 coding_tool:
   kind: codex
 codex:
-  command: CODEX_HOME=/Users/guoxunpan/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=xhigh app-server
+  command: CODEX_HOME=/Users/guoxunpan/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
   approval_policy: never
   thread_sandbox: danger-full-access
   turn_sandbox_policy:
