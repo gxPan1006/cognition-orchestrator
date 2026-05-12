@@ -49,6 +49,10 @@ Continuation context:
 - This is retry attempt #{{ attempt }} because the ticket is still in an active state.
 - Resume from the current workspace state instead of restarting from scratch.
 - Do not repeat already-completed investigation or validation unless needed for new code changes.
+- If the workpad already records an implementation plan or "beginning implementation",
+  check `git status --short --branch` and immediately continue the next unchecked
+  implementation step with file edits. Do not update Linear again before making
+  code changes.
 - Do not end the turn while the issue remains in an active state unless you are blocked by missing required permissions/secrets.
   {% endif %}
 
@@ -89,6 +93,10 @@ user to configure Linear.
 
 - Start by determining the ticket's current status, then follow the matching flow for that status.
 - Start every task by opening the tracking workpad comment and bringing it up to date before doing new implementation work.
+- On retry attempts, once the workpad is already current, do not re-run the full
+  ticket/workpad reconciliation loop. Continue from the current checkout and
+  make the next code change first; record progress back to Linear after the
+  repository has changed or validation has completed.
 - Spend extra effort up front on planning and verification design before implementation.
 - Reproduce first: always confirm the current behavior/issue signal before changing code so the fix target is explicit.
 - Keep ticket metadata current (state, checklist, acceptance criteria, links).
