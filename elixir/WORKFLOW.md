@@ -33,9 +33,9 @@ coding_tool:
 codex:
   command: CODEX_HOME=/Users/guoxunpan/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=xhigh app-server
   approval_policy: never
-  thread_sandbox: workspace-write
+  thread_sandbox: danger-full-access
   turn_sandbox_policy:
-    type: workspaceWrite
+    type: dangerFullAccess
 claude:
   command: claude --print --verbose --output-format stream-json --permission-mode bypassPermissions
 ---
