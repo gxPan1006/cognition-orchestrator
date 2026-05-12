@@ -1,18 +1,23 @@
 ---
 name: linear
 description: |
-  Use Symphony's `linear_graphql` client tool for raw Linear GraphQL
+  Use Cognition's `linear_graphql` client tool for raw Linear GraphQL
   operations such as comment editing and upload flows.
 ---
 
 # Linear GraphQL
 
-Use this skill for raw Linear GraphQL work during Symphony app-server sessions.
+Use this skill for raw Linear GraphQL work during Cognition app-server sessions.
 
 ## Primary tool
 
-Use the `linear_graphql` client tool exposed by Symphony's app-server session.
-It reuses Symphony's configured Linear auth for the session.
+Use the `linear_graphql` client tool exposed by Cognition's app-server session.
+It reuses Cognition's configured Linear auth for the session.
+
+Do not use external Linear MCP/app tools, including tools named like
+`mcp__codex_apps__linear.*`, even if they appear in the runtime. Cognition's
+unattended workflow relies on `linear_graphql`; external Linear write tools can
+hang the session.
 
 Tool input:
 
@@ -100,11 +105,12 @@ query IssueByKey($key: String!) {
     url
     description
     updatedAt
-    links {
+    attachments {
       nodes {
         id
         url
         title
+        sourceType
       }
     }
   }
@@ -180,6 +186,10 @@ query IssueDetails($id: String!) {
   }
 }
 ```
+
+Note: the current Linear schema used by this workspace does not expose
+`Issue.links`. Use `attachments` for PR/link discovery and use introspection
+before adding unfamiliar issue fields.
 
 ### Query team workflow states for an issue
 

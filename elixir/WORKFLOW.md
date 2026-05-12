@@ -73,9 +73,16 @@ Instructions:
 
 Work only in the provided repository copy. Do not touch any other path.
 
-## Prerequisite: Linear MCP or `linear_graphql` tool is available
+## Prerequisite: `linear_graphql` tool is available
 
-The agent should be able to talk to Linear, either via a configured Linear MCP server or injected `linear_graphql` tool. If none are present, stop and ask the user to configure Linear.
+The agent must talk to Linear through Cognition's injected `linear_graphql` tool only.
+Do not use external Linear MCP/app tools, including any `mcp__codex_apps__linear`
+tools, even if they are visible in the runtime. In this orchestration those tools are
+considered unavailable because their write calls can hang unattended sessions.
+If a `linear_graphql` query or mutation fails, use targeted GraphQL introspection to
+correct the schema shape and retry through `linear_graphql`; do not fall back to
+external Linear MCP/app tools. If `linear_graphql` itself is missing, stop and ask the
+user to configure Linear.
 
 ## Default posture
 
