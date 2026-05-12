@@ -49,10 +49,14 @@ Continuation context:
 - This is retry attempt #{{ attempt }} because the ticket is still in an active state.
 - Resume from the current workspace state instead of restarting from scratch.
 - Do not repeat already-completed investigation or validation unless needed for new code changes.
+- First run `git status --short --branch`. If there are any uncommitted changes,
+  treat them as in-progress implementation: inspect the diff, continue validation
+  or fix the failing check, and do not read or update Linear again until after a
+  code change or validation result.
 - If the workpad already records an implementation plan or "beginning implementation",
   check `git status --short --branch` and immediately continue the next unchecked
-  implementation step with file edits. Do not update Linear again before making
-  code changes.
+  implementation step with file edits or validation. Do not update Linear again
+  before making code changes or collecting a validation result.
 - Do not end the turn while the issue remains in an active state unless you are blocked by missing required permissions/secrets.
   {% endif %}
 
@@ -92,7 +96,12 @@ user to configure Linear.
 ## Default posture
 
 - Start by determining the ticket's current status, then follow the matching flow for that status.
-- Start every task by opening the tracking workpad comment and bringing it up to date before doing new implementation work.
+- Start every new task by opening the tracking workpad comment and bringing it up to date before doing new implementation work.
+- Exception: on retry attempts, or when `git status --short --branch` shows
+  existing uncommitted changes, use the active-retry fast path instead of the
+  full startup flow. Read Linear only once if needed to confirm the issue is
+  still active, then continue from the checkout and validate/fix the current
+  implementation before touching the workpad.
 - On retry attempts, once the workpad is already current, do not re-run the full
   ticket/workpad reconciliation loop. Continue from the current checkout and
   make the next code change first; record progress back to Linear after the
@@ -156,6 +165,16 @@ user to configure Linear.
 
 ## Step 1: Start/continue execution (Todo or In Progress)
 
+0.  Active-retry fast path:
+    - Before any Linear write, run `git status --short --branch`.
+    - If there are uncommitted changes, do not redo workpad reconciliation.
+      Inspect `git diff --stat` and continue with the current implementation:
+      run the relevant failing check, fix failures, or complete the next file
+      edit shown by the diff.
+    - Only update the workpad after a new code change lands, a validation result
+      is available, or a true blocker is found.
+    - If a long-running validation command is active, wait for it and consume its
+      result before starting another planning/reconciliation loop.
 1.  Find or create a single persistent scratchpad comment for the issue:
     - Search existing comments for a marker header: `## Cognition Workpad`.
     - Ignore resolved comments while searching; only active/unresolved comments are eligible to be reused as the live workpad.

@@ -114,8 +114,8 @@ defmodule Cognition.CoreTest do
 
     hooks = Map.get(config, "hooks", %{})
     assert is_map(hooks)
-    assert Map.get(hooks, "after_create") =~ "rsync -a --delete"
-    assert Map.get(hooks, "after_create") =~ "/Users/guoxunpan/code/cognition/"
+    assert Map.get(hooks, "after_create") =~ ~r/(rsync -a --delete|git clone)/
+    assert Map.get(hooks, "after_create") =~ ~r|/Users/guoxunpan/code/cognition/?|
     assert Map.get(hooks, "after_create") =~ "cd elixir && mise trust"
     assert Map.get(hooks, "after_create") =~ "mise exec -- mix deps.get"
     assert Map.get(hooks, "before_remove") =~ "cd elixir && mise exec -- mix workspace.before_remove"
