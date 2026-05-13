@@ -4,7 +4,7 @@
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Built with Elixir](https://img.shields.io/badge/Elixir-1.19-purple)](https://elixir-lang.org/)
-[![CI](https://github.com/GuoxunPan/cognition-orchestrator/actions/workflows/make-all.yml/badge.svg)](https://github.com/GuoxunPan/cognition-orchestrator/actions/workflows/make-all.yml)
+[![CI](https://github.com/gxPan1006/cognition-orchestrator/actions/workflows/make-all.yml/badge.svg)](https://github.com/gxPan1006/cognition-orchestrator/actions/workflows/make-all.yml)
 
 > ⚠️ **Not affiliated with Cognition AI (Devin).** This project is a community fork of OpenAI's [Symphony](#relationship-to-symphony) reference implementation, focused on multi-tool, self-hosted agent orchestration.
 
@@ -37,7 +37,7 @@ Cognition Orchestrator solves these as a **scheduler + workspace manager + obser
 ## Quickstart
 
 ```bash
-git clone https://github.com/GuoxunPan/cognition-orchestrator.git
+git clone https://github.com/gxPan1006/cognition-orchestrator.git
 cd cognition-orchestrator/elixir
 mise trust
 mise install

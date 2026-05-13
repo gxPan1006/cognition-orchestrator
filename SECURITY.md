@@ -4,7 +4,7 @@
 
 Please **do not open a public GitHub issue** for security problems.
 
-Instead, open a [GitHub Security Advisory](https://github.com/GuoxunPan/cognition-orchestrator/security/advisories/new) on this repository (private). I'll triage as fast as I can and confirm receipt within 7 days.
+Instead, open a [GitHub Security Advisory](https://github.com/gxPan1006/cognition-orchestrator/security/advisories/new) on this repository (private). I'll triage as fast as I can and confirm receipt within 7 days.
 
 Include in your report:
 

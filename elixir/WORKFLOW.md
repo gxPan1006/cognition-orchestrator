@@ -19,7 +19,7 @@ workspace:
   root: ~/code/cognition-workspaces
 hooks:
   after_create: |
-    git clone https://github.com/GuoxunPan/cognition-orchestrator.git .
+    git clone https://github.com/gxPan1006/cognition-orchestrator.git .
     if command -v mise >/dev/null 2>&1; then
       cd elixir && mise trust && mise exec -- mix deps.get
     fi
