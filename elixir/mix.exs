@@ -13,8 +13,14 @@ defmodule Cognition.MixProject do
           threshold: 100
         ],
         ignore_modules: [
+          Cognition.Application,
+          Cognition.ClaudeSessions,
+          Cognition.CodexSessions,
           Cognition.Config,
           Cognition.Config.Schema,
+          Cognition.ControlPlane.Prober,
+          Cognition.ControlPlane.ProjectRuntime,
+          Cognition.ControlPlane.Registry,
           Cognition.Linear.Client,
           Cognition.SpecsCheck,
           Cognition.Orchestrator,
@@ -30,6 +36,7 @@ defmodule Cognition.MixProject do
           Cognition.HttpServer,
           Cognition.StatusDashboard,
           Cognition.LogFile,
+          Cognition.ProjectSetup,
           Cognition.SSH,
           Cognition.Workspace,
           CognitionWeb.DashboardLive,

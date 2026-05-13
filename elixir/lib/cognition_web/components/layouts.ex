@@ -5,9 +5,14 @@ defmodule CognitionWeb.Layouts do
 
   use Phoenix.Component
 
+  alias CognitionWeb.StaticAssets
+
   @spec root(map()) :: Phoenix.LiveView.Rendered.t()
   def root(assigns) do
-    assigns = assign(assigns, :csrf_token, Plug.CSRFProtection.get_csrf_token())
+    assigns =
+      assigns
+      |> assign(:csrf_token, Plug.CSRFProtection.get_csrf_token())
+      |> assign(:css_version, StaticAssets.version("/dashboard.css"))
 
     ~H"""
     <!DOCTYPE html>
@@ -36,7 +41,7 @@ defmodule CognitionWeb.Layouts do
             window.liveSocket = liveSocket;
           });
         </script>
-        <link rel="stylesheet" href="/dashboard.css" />
+        <link rel="stylesheet" href={"/dashboard.css?v=" <> @css_version} />
       </head>
       <body>
         {@inner_content}

@@ -5,6 +5,7 @@ defmodule Cognition.ExtensionsTest do
   import Phoenix.LiveViewTest
 
   alias Cognition.Linear.Adapter
+  alias Cognition.ProjectSetup
   alias Cognition.Tracker.Memory
 
   @endpoint CognitionWeb.Endpoint
@@ -28,13 +29,22 @@ defmodule Cognition.ExtensionsTest do
     def graphql(query, variables) do
       send(self(), {:graphql_called, query, variables})
 
-      case Process.get({__MODULE__, :graphql_results}) do
+      process_results = Process.get({__MODULE__, :graphql_results})
+      shared_results = Application.get_env(:cognition, :fake_linear_graphql_results)
+
+      case process_results || shared_results do
         [result | rest] ->
-          Process.put({__MODULE__, :graphql_results}, rest)
+          if is_nil(process_results) do
+            Application.put_env(:cognition, :fake_linear_graphql_results, rest)
+          else
+            Process.put({__MODULE__, :graphql_results}, rest)
+          end
+
           result
 
         _ ->
-          Process.get({__MODULE__, :graphql_result})
+          Process.get({__MODULE__, :graphql_result}) ||
+            Application.get_env(:cognition, :fake_linear_graphql_result)
       end
     end
   end
@@ -463,6 +473,110 @@ defmodule Cognition.ExtensionsTest do
              }
   end
 
+  test "linear_graphql endpoint proxies to the configured Linear client" do
+    Application.put_env(:cognition, :linear_client_module, FakeLinearClient)
+
+    on_exit(fn ->
+      Application.delete_env(:cognition, :linear_client_module)
+      Application.delete_env(:cognition, :fake_linear_graphql_result)
+    end)
+
+    Application.put_env(
+      :cognition,
+      :fake_linear_graphql_result,
+      {:ok, %{"data" => %{"issueUpdate" => %{"success" => true}}}}
+    )
+
+    orchestrator_name = Module.concat(__MODULE__, :LinearGraphqlOrchestrator)
+    {:ok, _pid} = StaticOrchestrator.start_link(name: orchestrator_name, snapshot: static_snapshot())
+    start_test_endpoint(orchestrator: orchestrator_name, snapshot_timeout_ms: 50)
+
+    body = %{
+      "query" => "mutation Move($id: String!, $stateId: String!) { issueUpdate(id: $id, input: {stateId: $stateId}) { success } }",
+      "variables" => %{"id" => "issue-1", "stateId" => "state-progress"}
+    }
+
+    response = json_response(post(build_conn(), "/api/v1/linear/graphql", body), 200)
+
+    assert response == %{"data" => %{"issueUpdate" => %{"success" => true}}}
+
+    assert_received {:graphql_called, query, variables}
+    assert query =~ "issueUpdate"
+    assert variables == %{"id" => "issue-1", "stateId" => "state-progress"}
+  end
+
+  test "linear_graphql endpoint rejects missing query, bad variables, and propagates client errors" do
+    Application.put_env(:cognition, :linear_client_module, FakeLinearClient)
+
+    on_exit(fn ->
+      Application.delete_env(:cognition, :linear_client_module)
+      Application.delete_env(:cognition, :fake_linear_graphql_result)
+    end)
+
+    orchestrator_name = Module.concat(__MODULE__, :LinearGraphqlValidationOrchestrator)
+    {:ok, _pid} = StaticOrchestrator.start_link(name: orchestrator_name, snapshot: static_snapshot())
+    start_test_endpoint(orchestrator: orchestrator_name, snapshot_timeout_ms: 50)
+
+    assert json_response(post(build_conn(), "/api/v1/linear/graphql", %{}), 400) ==
+             %{
+               "error" => %{
+                 "code" => "missing_query",
+                 "message" => "Request body must include a non-empty `query` string"
+               }
+             }
+
+    assert json_response(post(build_conn(), "/api/v1/linear/graphql", %{"query" => "   "}), 400) ==
+             %{
+               "error" => %{
+                 "code" => "missing_query",
+                 "message" => "Request body must include a non-empty `query` string"
+               }
+             }
+
+    assert json_response(
+             post(build_conn(), "/api/v1/linear/graphql", %{
+               "query" => "query { ok }",
+               "variables" => "not-an-object"
+             }),
+             400
+           ) ==
+             %{
+               "error" => %{
+                 "code" => "invalid_variables",
+                 "message" => "`variables` must be a JSON object when provided"
+               }
+             }
+
+    assert json_response(get(build_conn(), "/api/v1/linear/graphql"), 405) ==
+             %{"error" => %{"code" => "method_not_allowed", "message" => "Method not allowed"}}
+
+    Application.put_env(:cognition, :fake_linear_graphql_result, {:error, :missing_linear_api_token})
+
+    assert json_response(
+             post(build_conn(), "/api/v1/linear/graphql", %{"query" => "query { ok }"}),
+             500
+           ) ==
+             %{
+               "error" => %{
+                 "code" => "missing_linear_api_token",
+                 "message" => "Cognition has no Linear API token configured"
+               }
+             }
+
+    Application.put_env(:cognition, :fake_linear_graphql_result, {:error, {:linear_api_status, 503}})
+
+    assert json_response(
+             post(build_conn(), "/api/v1/linear/graphql", %{"query" => "query { ok }"}),
+             502
+           ) ==
+             %{
+               "error" => %{
+                 "code" => "linear_api_status",
+                 "message" => "Linear GraphQL responded with HTTP 503"
+               }
+             }
+  end
+
   test "phoenix observability api preserves snapshot timeout behavior" do
     timeout_orchestrator = Module.concat(__MODULE__, :TimeoutOrchestrator)
     {:ok, _pid} = SlowOrchestrator.start_link(name: timeout_orchestrator)
@@ -520,6 +634,258 @@ defmodule Cognition.ExtensionsTest do
     assert live_view_js =~ "var LiveView = (() => {"
   end
 
+  test "project setup prepares a project-local workflow and runner" do
+    project_root =
+      Path.join(
+        System.tmp_dir!(),
+        "cognition-project-setup-#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(project_root)
+    {project_root, 0} = System.cmd("pwd", ["-P"], cd: project_root)
+    project_root = String.trim(project_root)
+    File.write!(Path.join(project_root, "package-lock.json"), "{}\n")
+    assert {_output, 0} = System.cmd("git", ["init", "--initial-branch=main"], cd: project_root)
+
+    on_exit(fn ->
+      Application.delete_env(:cognition, :cognition_elixir_dir)
+      Application.delete_env(:cognition, :fake_linear_graphql_result)
+      Application.delete_env(:cognition, :project_runtime_starter)
+      File.rm_rf(project_root)
+      File.rm_rf("#{project_root}-workspaces")
+    end)
+
+    Application.put_env(:cognition, :cognition_elixir_dir, "/opt/cognition/elixir")
+    Application.put_env(:cognition, :linear_client_module, FakeLinearClient)
+
+    Application.put_env(:cognition, :project_runtime_starter, fn result ->
+      {:ok, %{session: "cognition-test-#{result.port}", url: "http://127.0.0.1:#{result.port}/", warnings: []}}
+    end)
+
+    Application.put_env(
+      :cognition,
+      :fake_linear_graphql_result,
+      {:ok,
+       %{
+         "data" => %{
+           "projects" => %{
+             "nodes" => [
+               %{
+                 "slugId" => "project-123",
+                 "url" => "https://linear.app/project/project-123/issues",
+                 "teams" => %{"nodes" => [%{"id" => "team-1"}]}
+               }
+             ]
+           }
+         }
+       }}
+    )
+
+    assert {:ok, result} =
+             ProjectSetup.prepare(%{
+               "project_path" => project_root,
+               "project_slug" => "project-123",
+               "coding_tool" => "claude",
+               "clone_source" => "local",
+               "port" => "4111"
+             })
+
+    assert result.project_path == project_root
+    assert result.workspace_root == "#{project_root}-workspaces"
+    assert result.clone_source == "local:#{project_root}"
+    assert result.coding_tool == "claude"
+    refute result.linear_project_created
+    assert result.runtime_started
+    assert result.runtime_session == "cognition-test-4111"
+    assert result.runtime_url == "http://127.0.0.1:4111/"
+    assert File.exists?(result.workflow_path)
+    assert File.exists?(result.runner_path)
+
+    workflow = File.read!(result.workflow_path)
+    assert workflow =~ "project_slug: \"project-123\""
+    assert workflow =~ "coding_tool:\n  kind: claude"
+    assert workflow =~ "git clone '#{project_root}' ."
+    assert workflow =~ "npm ci"
+
+    runner = File.read!(result.runner_path)
+    assert runner =~ "cd '/opt/cognition/elixir'"
+    assert runner =~ "--port 4111"
+    assert runner =~ result.workflow_path
+  end
+
+  test "project setup reuses existing project-local workflow slug when slug is blank" do
+    project_root =
+      Path.join(
+        System.tmp_dir!(),
+        "cognition-project-setup-existing-slug-#{System.unique_integer([:positive])}"
+      )
+
+    cognition_dir = Path.join(project_root, ".cognition")
+    File.mkdir_p!(cognition_dir)
+    {project_root, 0} = System.cmd("pwd", ["-P"], cd: project_root)
+    project_root = String.trim(project_root)
+    assert {_output, 0} = System.cmd("git", ["init", "--initial-branch=main"], cd: project_root)
+
+    File.write!(Path.join(project_root, ".cognition/WORKFLOW.md"), """
+    ---
+    tracker:
+      kind: linear
+      project_slug: saved-linear-slug
+    ---
+    Existing workflow.
+    """)
+
+    on_exit(fn ->
+      Application.delete_env(:cognition, :cognition_elixir_dir)
+      Application.delete_env(:cognition, :fake_linear_graphql_result)
+      Application.delete_env(:cognition, :project_runtime_starter)
+      File.rm_rf(project_root)
+      File.rm_rf("#{project_root}-workspaces")
+    end)
+
+    Application.put_env(:cognition, :cognition_elixir_dir, "/opt/cognition/elixir")
+    Application.put_env(:cognition, :linear_client_module, FakeLinearClient)
+
+    Application.put_env(:cognition, :project_runtime_starter, fn result ->
+      {:ok, %{session: "cognition-test-#{result.port}", url: "http://127.0.0.1:#{result.port}/", warnings: []}}
+    end)
+
+    Application.put_env(
+      :cognition,
+      :fake_linear_graphql_result,
+      {:ok,
+       %{
+         "data" => %{
+           "projects" => %{
+             "nodes" => [
+               %{
+                 "slugId" => "saved-linear-slug",
+                 "url" => "https://linear.app/project/saved-linear-slug/issues",
+                 "teams" => %{"nodes" => [%{"id" => "team-1"}]}
+               }
+             ]
+           }
+         }
+       }}
+    )
+
+    assert {:ok, result} =
+             ProjectSetup.prepare(%{
+               "project_path" => project_root,
+               "project_slug" => "",
+               "coding_tool" => "codex",
+               "clone_source" => "local",
+               "port" => "4113"
+             })
+
+    assert_receive {:graphql_called, _query, %{slugId: "saved-linear-slug"}}
+    assert result.project_slug == "saved-linear-slug"
+    refute result.linear_project_created
+  end
+
+  test "project setup initialises a Git repo when the chosen folder is not a worktree" do
+    project_root =
+      Path.join(
+        System.tmp_dir!(),
+        "cognition-project-setup-no-git-#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(project_root)
+    {project_root, 0} = System.cmd("pwd", ["-P"], cd: project_root)
+    project_root = String.trim(project_root)
+
+    on_exit(fn ->
+      Application.delete_env(:cognition, :cognition_elixir_dir)
+      Application.delete_env(:cognition, :fake_linear_graphql_result)
+      Application.delete_env(:cognition, :project_runtime_starter)
+      File.rm_rf(project_root)
+      File.rm_rf("#{project_root}-workspaces")
+    end)
+
+    Application.put_env(:cognition, :cognition_elixir_dir, "/opt/cognition/elixir")
+    Application.put_env(:cognition, :linear_client_module, FakeLinearClient)
+
+    Application.put_env(:cognition, :project_runtime_starter, fn result ->
+      {:ok, %{session: "cognition-test-#{result.port}", url: "http://127.0.0.1:#{result.port}/", warnings: []}}
+    end)
+
+    Application.put_env(
+      :cognition,
+      :fake_linear_graphql_result,
+      {:ok,
+       %{
+         "data" => %{
+           "projects" => %{
+             "nodes" => [
+               %{
+                 "slugId" => "auto-init-project",
+                 "url" => "https://linear.app/project/auto-init-project/issues",
+                 "teams" => %{"nodes" => [%{"id" => "team-1"}]}
+               }
+             ]
+           }
+         }
+       }}
+    )
+
+    refute File.exists?(Path.join(project_root, ".git"))
+
+    assert {:ok, result} =
+             ProjectSetup.prepare(%{
+               "project_path" => project_root,
+               "project_slug" => "auto-init-project",
+               "coding_tool" => "codex",
+               "clone_source" => "local",
+               "port" => "4114"
+             })
+
+    assert File.dir?(Path.join(project_root, ".git"))
+    assert result.project_path == project_root
+    assert result.runtime_started
+
+    assert Enum.any?(result.warnings, fn warning ->
+             warning =~ "Initialised a Git repository"
+           end)
+  end
+
+  test "ProjectSetup.next_free_port/0 skips ports already taken by registered runtimes" do
+    refute Process.whereis(Cognition.ControlPlane.Registry),
+           "Registry should not be running before this test starts"
+
+    tmp_path =
+      Path.join(
+        System.tmp_dir!(),
+        "cognition-port-picker-#{System.unique_integer([:positive])}.json"
+      )
+
+    {:ok, pid} =
+      Cognition.ControlPlane.Registry.start_link(
+        name: Cognition.ControlPlane.Registry,
+        persistence_path: tmp_path
+      )
+
+    on_exit(fn ->
+      if Process.alive?(pid), do: GenServer.stop(pid)
+      File.rm(tmp_path)
+    end)
+
+    {:ok, _entry} =
+      Cognition.ControlPlane.Registry.register(%{
+        name: "demo",
+        project_path: "/tmp/demo",
+        workflow_path: "/tmp/demo/.cognition/WORKFLOW.md",
+        runner_path: "/tmp/demo/.cognition/run-cognition.sh",
+        tmux_session: "cognition-demo-4000",
+        port: 4000,
+        coding_tool: "codex",
+        workspace_root: "/tmp/demo-workspaces"
+      })
+
+    picked = ProjectSetup.next_free_port(4000)
+    assert is_integer(picked) and picked > 0
+    refute picked == 4000
+  end
+
   test "dashboard liveview renders and refreshes over pubsub" do
     orchestrator_name = Module.concat(__MODULE__, :DashboardOrchestrator)
     snapshot = static_snapshot()
@@ -536,16 +902,21 @@ defmodule Cognition.ExtensionsTest do
         }
       )
 
+    Application.put_env(:cognition, :runtime_mode, :project)
+    on_exit(fn -> Application.delete_env(:cognition, :runtime_mode) end)
     start_test_endpoint(orchestrator: orchestrator_name, snapshot_timeout_ms: 50)
 
     {:ok, view, html} = live(build_conn(), "/")
-    assert html =~ "Operations Dashboard"
+    assert html =~ "Cognition Runtime"
+    assert html =~ "Agent Activity"
     assert html =~ "MT-HTTP"
     assert html =~ "MT-RETRY"
     assert html =~ "rendered"
-    assert html =~ "Runtime"
     assert html =~ "Live"
     assert html =~ "Offline"
+    refute html =~ "Project onboarding"
+    refute html =~ "Directory browser"
+    refute html =~ "Prepare and start"
     assert html =~ "Copy ID"
     assert html =~ "Agent update"
     refute html =~ "data-runtime-clock="
@@ -594,6 +965,150 @@ defmodule Cognition.ExtensionsTest do
     assert_eventually(fn ->
       render(view) =~ "agent message content streaming: structured update"
     end)
+  end
+
+  test "dashboard project onboarding form prepares runtime files" do
+    orchestrator_name = Module.concat(__MODULE__, :ProjectSetupDashboardOrchestrator)
+
+    {:ok, _orchestrator_pid} =
+      StaticOrchestrator.start_link(
+        name: orchestrator_name,
+        snapshot: static_snapshot(),
+        refresh: :unavailable
+      )
+
+    project_root =
+      Path.join(
+        System.tmp_dir!(),
+        "cognition-dashboard-project-setup-#{System.unique_integer([:positive])}"
+      )
+
+    File.mkdir_p!(project_root)
+    {project_root, 0} = System.cmd("pwd", ["-P"], cd: project_root)
+    project_root = String.trim(project_root)
+    assert {_output, 0} = System.cmd("git", ["init", "--initial-branch=main"], cd: project_root)
+
+    Application.put_env(:cognition, :runtime_mode, :control_plane)
+
+    on_exit(fn ->
+      Application.delete_env(:cognition, :runtime_mode)
+      Application.delete_env(:cognition, :cognition_elixir_dir)
+      Application.delete_env(:cognition, :fake_linear_graphql_results)
+      Application.delete_env(:cognition, :project_runtime_starter)
+      Application.delete_env(:cognition, :project_folder_picker)
+      File.rm_rf(project_root)
+      File.rm_rf("#{project_root}-workspaces")
+    end)
+
+    Application.put_env(:cognition, :cognition_elixir_dir, "/opt/cognition/elixir")
+    Application.put_env(:cognition, :linear_client_module, FakeLinearClient)
+
+    Application.put_env(:cognition, :project_runtime_starter, fn result ->
+      {:ok, %{session: "cognition-test-#{result.port}", url: "http://127.0.0.1:#{result.port}/", warnings: []}}
+    end)
+
+    Application.put_env(
+      :cognition,
+      :fake_linear_graphql_results,
+      [
+        {:ok, %{"data" => %{"projects" => %{"nodes" => []}}}},
+        {:ok,
+         %{
+           "data" => %{
+             "projects" => %{
+               "nodes" => [
+                 %{
+                   "slugId" => "project",
+                   "teams" => %{"nodes" => [%{"id" => "team-1"}]}
+                 }
+               ]
+             }
+           }
+         }},
+        {:ok,
+         %{
+           "data" => %{
+             "projectCreate" => %{
+               "success" => true,
+               "project" => %{
+                 "slugId" => "created-project",
+                 "url" => "https://linear.app/project/created-project/issues"
+               }
+             }
+           }
+         }}
+      ]
+    )
+
+    start_test_endpoint(orchestrator: orchestrator_name, snapshot_timeout_ms: 50)
+
+    {:ok, view, _html} = live(build_conn(), "/")
+
+    Application.put_env(:cognition, :project_folder_picker, fn _start_path -> {:ok, project_root} end)
+
+    changed_html =
+      view
+      |> element("form[phx-change='validate_project_setup']")
+      |> render_change(%{
+        "project_setup" => %{
+          "project_path" => "",
+          "project_slug" => "",
+          "coding_tool" => "claude",
+          "clone_source" => "local",
+          "port" => "4112",
+          "workspace_root" => ""
+        }
+      })
+
+    assert changed_html =~ ~s(<option value="claude" selected)
+    assert changed_html =~ ~s(<option value="local" selected)
+
+    picker_html = render_click(view, "choose_project_folder")
+    assert picker_html =~ project_root
+    assert picker_html =~ ~s(<option value="claude" selected)
+    assert picker_html =~ ~s(<option value="local" selected)
+
+    browser_html = render_click(view, "browse_project_path", %{"path" => Path.dirname(project_root)})
+    assert browser_html =~ Path.basename(project_root)
+    assert browser_html =~ ~s(<option value="claude" selected)
+    assert browser_html =~ ~s(<option value="local" selected)
+
+    selected_html = render_click(view, "select_project_path", %{"path" => project_root})
+    assert selected_html =~ project_root
+    assert selected_html =~ ~s(<option value="claude" selected)
+    assert selected_html =~ ~s(<option value="local" selected)
+
+    pending_html =
+      view
+      |> element("form[phx-submit='prepare_project']")
+      |> render_submit(%{
+        "project_setup" => %{
+          "project_path" => project_root,
+          "project_slug" => "",
+          "coding_tool" => "codex",
+          "clone_source" => "local",
+          "port" => "4112",
+          "workspace_root" => ""
+        }
+      })
+
+    assert pending_html =~ "Preparing"
+    assert pending_html =~ "setup-pending"
+
+    html = render_async(view)
+
+    workflow_path = Path.join(project_root, ".cognition/WORKFLOW.md")
+    runner_path = Path.join(project_root, ".cognition/run-cognition.sh")
+
+    assert html =~ "Clone source"
+    assert html =~ "local:#{project_root}"
+    assert html =~ "created · created-project"
+    assert html =~ "http://127.0.0.1:4112/"
+    assert html =~ "cognition-test-4112"
+    refute html =~ "setup-pending"
+    assert File.exists?(workflow_path)
+    assert File.exists?(runner_path)
+    assert File.read!(workflow_path) =~ "project_slug: \"created-project\""
   end
 
   test "dashboard liveview renders an unavailable state without crashing" do

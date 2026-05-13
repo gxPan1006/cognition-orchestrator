@@ -29,6 +29,10 @@ defmodule Cognition.CLITest do
         send(parent, :language_set)
         :ok
       end,
+      set_runtime_mode: fn _mode ->
+        send(parent, :runtime_mode_set)
+        :ok
+      end,
       ensure_all_started: fn ->
         send(parent, :started)
         {:ok, [:cognition]}
@@ -45,6 +49,7 @@ defmodule Cognition.CLITest do
     refute_received :logs_root_set
     refute_received :port_set
     refute_received :language_set
+    refute_received :runtime_mode_set
     refute_received :started
   end
 
@@ -55,6 +60,7 @@ defmodule Cognition.CLITest do
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -78,6 +84,7 @@ defmodule Cognition.CLITest do
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -98,6 +105,7 @@ defmodule Cognition.CLITest do
       end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -118,6 +126,7 @@ defmodule Cognition.CLITest do
         send(parent, {:language, language})
         :ok
       end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -132,6 +141,7 @@ defmodule Cognition.CLITest do
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -146,6 +156,7 @@ defmodule Cognition.CLITest do
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -160,6 +171,7 @@ defmodule Cognition.CLITest do
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:error, :boom} end
     }
 
@@ -175,9 +187,117 @@ defmodule Cognition.CLITest do
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
       set_language: fn _language -> :ok end,
+      set_runtime_mode: fn _mode -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
     assert :ok = CLI.evaluate([@ack_flag, "WORKFLOW.md"], deps)
+  end
+
+  test "--control-plane flag skips workflow path and sets control_plane mode" do
+    parent = self()
+
+    deps = %{
+      file_regular?: fn _path ->
+        send(parent, :file_checked)
+        true
+      end,
+      set_workflow_file_path: fn _path ->
+        send(parent, :workflow_set)
+        :ok
+      end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
+      set_runtime_mode: fn mode ->
+        send(parent, {:runtime_mode, mode})
+        :ok
+      end,
+      ensure_all_started: fn ->
+        send(parent, :started)
+        {:ok, [:cognition]}
+      end
+    }
+
+    assert :ok = CLI.evaluate([@ack_flag, "--control-plane"], deps)
+
+    assert_received {:runtime_mode, :control_plane}
+    assert_received :started
+    refute_received :file_checked
+    refute_received :workflow_set
+  end
+
+  test "--control-plane combines cleanly with --port and --logs-root" do
+    parent = self()
+
+    deps = %{
+      file_regular?: fn _ -> true end,
+      set_workflow_file_path: fn _ -> :ok end,
+      set_logs_root: fn path ->
+        send(parent, {:logs_root, path})
+        :ok
+      end,
+      set_server_port_override: fn port ->
+        send(parent, {:port, port})
+        :ok
+      end,
+      set_language: fn _language -> :ok end,
+      set_runtime_mode: fn mode ->
+        send(parent, {:runtime_mode, mode})
+        :ok
+      end,
+      ensure_all_started: fn -> {:ok, [:cognition]} end
+    }
+
+    assert :ok =
+             CLI.evaluate(
+               [@ack_flag, "--control-plane", "--port", "4001", "--logs-root", "tmp/cp-logs"],
+               deps
+             )
+
+    assert_received {:port, 4001}
+    assert_received {:logs_root, _expanded}
+    assert_received {:runtime_mode, :control_plane}
+  end
+
+  test "--control-plane forwards --language to runtime deps" do
+    parent = self()
+
+    deps = %{
+      file_regular?: fn _ -> true end,
+      set_workflow_file_path: fn _ -> :ok end,
+      set_logs_root: fn _ -> :ok end,
+      set_server_port_override: fn _ -> :ok end,
+      set_language: fn language ->
+        send(parent, {:language, language})
+        :ok
+      end,
+      set_runtime_mode: fn mode ->
+        send(parent, {:runtime_mode, mode})
+        :ok
+      end,
+      ensure_all_started: fn -> {:ok, [:cognition]} end
+    }
+
+    assert :ok = CLI.evaluate([@ack_flag, "--control-plane", "--language", "中文"], deps)
+
+    assert_received {:language, "中文"}
+    assert_received {:runtime_mode, :control_plane}
+  end
+
+  test "--control-plane error path uses control plane wording" do
+    deps = %{
+      file_regular?: fn _ -> true end,
+      set_workflow_file_path: fn _ -> :ok end,
+      set_logs_root: fn _ -> :ok end,
+      set_server_port_override: fn _ -> :ok end,
+      set_language: fn _ -> :ok end,
+      set_runtime_mode: fn _ -> :ok end,
+      ensure_all_started: fn -> {:error, :boom} end
+    }
+
+    assert {:error, message} = CLI.evaluate([@ack_flag, "--control-plane"], deps)
+    assert message =~ "Failed to start Cognition control plane"
+    assert message =~ ":boom"
   end
 end

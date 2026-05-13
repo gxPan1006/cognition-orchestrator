@@ -19,32 +19,44 @@ defmodule Cognition.HttpServer do
   @spec start_link(keyword()) :: GenServer.on_start() | :ignore
   def start_link(opts \\ []) do
     case Keyword.get(opts, :port, Config.server_port()) do
-      port when is_integer(port) and port >= 0 ->
-        host = Keyword.get(opts, :host, Config.settings!().server.host)
-        orchestrator = Keyword.get(opts, :orchestrator, Orchestrator)
-        snapshot_timeout_ms = Keyword.get(opts, :snapshot_timeout_ms, 15_000)
+      port when is_integer(port) and port >= 0 -> start_endpoint(port, opts)
+      _ -> :ignore
+    end
+  end
 
-        with {:ok, ip} <- parse_host(host) do
-          endpoint_opts = [
-            server: true,
-            http: [ip: ip, port: port],
-            url: [host: normalize_host(host)],
-            orchestrator: orchestrator,
-            snapshot_timeout_ms: snapshot_timeout_ms,
-            secret_key_base: secret_key_base()
-          ]
+  defp start_endpoint(port, opts) do
+    host = Keyword.get(opts, :host, Config.settings!().server.host)
+    orchestrator = Keyword.get(opts, :orchestrator, Orchestrator)
+    snapshot_timeout_ms = Keyword.get(opts, :snapshot_timeout_ms, 15_000)
 
-          endpoint_config =
-            :cognition
-            |> Application.get_env(Endpoint, [])
-            |> Keyword.merge(endpoint_opts)
+    with {:ok, ip} <- parse_host(host) do
+      endpoint_opts = [
+        server: true,
+        http: [ip: ip, port: port],
+        url: [host: normalize_host(host)],
+        orchestrator: orchestrator,
+        snapshot_timeout_ms: snapshot_timeout_ms,
+        secret_key_base: secret_key_base()
+      ]
 
-          Application.put_env(:cognition, Endpoint, endpoint_config)
-          Endpoint.start_link()
-        end
+      endpoint_config =
+        :cognition
+        |> Application.get_env(Endpoint, [])
+        |> Keyword.merge(endpoint_opts)
 
-      _ ->
-        :ignore
+      Application.put_env(:cognition, Endpoint, endpoint_config)
+      launch_endpoint(host)
+    end
+  end
+
+  defp launch_endpoint(host) do
+    case Endpoint.start_link() do
+      {:ok, _pid} = ok ->
+        maybe_export_local_url_env(normalize_host(host))
+        ok
+
+      other ->
+        other
     end
   end
 
@@ -85,4 +97,16 @@ defmodule Cognition.HttpServer do
   defp secret_key_base do
     Base.encode64(:crypto.strong_rand_bytes(@secret_key_bytes), padding: false)
   end
+
+  defp maybe_export_local_url_env(host) when is_binary(host) and host != "" do
+    case bound_port() do
+      port when is_integer(port) and port > 0 ->
+        System.put_env("COGNITION_LOCAL_URL", "http://#{host}:#{port}")
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp maybe_export_local_url_env(_host), do: :ok
 end

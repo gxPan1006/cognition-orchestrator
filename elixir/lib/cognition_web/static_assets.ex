@@ -23,11 +23,31 @@ defmodule CognitionWeb.StaticAssets do
     "/vendor/phoenix_live_view/phoenix_live_view.js" => {"application/javascript", @phoenix_live_view_js}
   }
 
+  @asset_versions @assets
+                  |> Enum.map(fn {path, {_type, body}} ->
+                    digest =
+                      :crypto.hash(:sha256, body)
+                      |> Base.encode16(case: :lower)
+                      |> binary_part(0, 12)
+
+                    {path, digest}
+                  end)
+                  |> Map.new()
+
   @spec fetch(String.t()) :: {:ok, String.t(), binary()} | :error
   def fetch(path) when is_binary(path) do
     case Map.fetch(@assets, path) do
       {:ok, {content_type, body}} -> {:ok, content_type, body}
       :error -> :error
     end
+  end
+
+  @doc """
+  Short content-hash digest baked in at compile time, used as a cache-buster
+  query string on the served asset URL.
+  """
+  @spec version(String.t()) :: String.t()
+  def version(path) when is_binary(path) do
+    Map.get(@asset_versions, path, "0")
   end
 end

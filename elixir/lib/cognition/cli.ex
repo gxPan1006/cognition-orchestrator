@@ -6,7 +6,14 @@ defmodule Cognition.CLI do
   alias Cognition.LogFile
 
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
-  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer, language: :string]
+  @control_plane_switch :control_plane
+  @switches [
+    {@acknowledgement_switch, :boolean},
+    {@control_plane_switch, :boolean},
+    logs_root: :string,
+    port: :integer,
+    language: :string
+  ]
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
@@ -15,6 +22,7 @@ defmodule Cognition.CLI do
           set_logs_root: (String.t() -> :ok | {:error, term()}),
           set_server_port_override: (non_neg_integer() | nil -> :ok | {:error, term()}),
           set_language: (String.t() | nil -> :ok | {:error, term()}),
+          set_runtime_mode: (atom() -> :ok | {:error, term()}),
           ensure_all_started: (-> ensure_started_result())
         }
 
@@ -33,24 +41,38 @@ defmodule Cognition.CLI do
   @spec evaluate([String.t()], deps()) :: :ok | {:error, String.t()}
   def evaluate(args, deps \\ runtime_deps()) do
     case OptionParser.parse(args, strict: @switches) do
-      {opts, [], []} ->
-        with :ok <- require_guardrails_acknowledgement(opts),
-             :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps),
-             :ok <- maybe_set_language(opts, deps) do
-          run(Path.expand("WORKFLOW.md"), deps)
-        end
+      {opts, positional, []} when length(positional) <= 1 -> dispatch(opts, positional, deps)
+      _ -> {:error, usage_message()}
+    end
+  end
 
-      {opts, [workflow_path], []} ->
-        with :ok <- require_guardrails_acknowledgement(opts),
-             :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps),
-             :ok <- maybe_set_language(opts, deps) do
-          run(workflow_path, deps)
-        end
+  defp dispatch(opts, positional, deps) do
+    cond do
+      Keyword.get(opts, @control_plane_switch, false) -> run_control_plane(opts, deps)
+      positional == [] -> run_project(opts, Path.expand("WORKFLOW.md"), deps)
+      true -> run_project(opts, hd(positional), deps)
+    end
+  end
 
-      _ ->
-        {:error, usage_message()}
+  defp run_control_plane(opts, deps) do
+    with :ok <- require_guardrails_acknowledgement(opts),
+         :ok <- apply_runtime_options(opts, deps),
+         :ok <- deps.set_runtime_mode.(:control_plane) do
+      start_application(deps, :control_plane)
+    end
+  end
+
+  defp run_project(opts, workflow_path, deps) do
+    with :ok <- require_guardrails_acknowledgement(opts),
+         :ok <- apply_runtime_options(opts, deps) do
+      run(workflow_path, deps)
+    end
+  end
+
+  defp apply_runtime_options(opts, deps) do
+    with :ok <- maybe_set_logs_root(opts, deps),
+         :ok <- maybe_set_server_port(opts, deps) do
+      maybe_set_language(opts, deps)
     end
   end
 
@@ -60,22 +82,38 @@ defmodule Cognition.CLI do
 
     if deps.file_regular?.(expanded_path) do
       :ok = deps.set_workflow_file_path.(expanded_path)
-
-      case deps.ensure_all_started.() do
-        {:ok, _started_apps} ->
-          :ok
-
-        {:error, reason} ->
-          {:error, "Failed to start Cognition with workflow #{expanded_path}: #{inspect(reason)}"}
-      end
+      :ok = deps.set_runtime_mode.(:project)
+      start_application(deps, :project, expanded_path)
     else
       {:error, "Workflow file not found: #{expanded_path}"}
     end
   end
 
+  defp start_application(deps, mode, expanded_path \\ nil) do
+    case deps.ensure_all_started.() do
+      {:ok, _started_apps} ->
+        :ok
+
+      {:error, reason} ->
+        message =
+          case {mode, expanded_path} do
+            {:control_plane, _} ->
+              "Failed to start Cognition control plane: #{inspect(reason)}"
+
+            {_, path} when is_binary(path) ->
+              "Failed to start Cognition with workflow #{path}: #{inspect(reason)}"
+
+            _ ->
+              "Failed to start Cognition: #{inspect(reason)}"
+          end
+
+        {:error, message}
+    end
+  end
+
   @spec usage_message() :: String.t()
   defp usage_message do
-    "Usage: cognition [--logs-root <path>] [--port <port>] [--language <name>] [path-to-WORKFLOW.md]"
+    "Usage: cognition [--control-plane] [--logs-root <path>] [--port <port>] [--language <name>] [path-to-WORKFLOW.md]"
   end
 
   @spec runtime_deps() :: deps()
@@ -86,8 +124,14 @@ defmodule Cognition.CLI do
       set_logs_root: &set_logs_root/1,
       set_server_port_override: &set_server_port_override/1,
       set_language: &set_language/1,
+      set_runtime_mode: &set_runtime_mode/1,
       ensure_all_started: fn -> Application.ensure_all_started(:cognition) end
     }
+  end
+
+  defp set_runtime_mode(mode) when mode in [:project, :control_plane] do
+    Application.put_env(:cognition, :runtime_mode, mode)
+    :ok
   end
 
   defp maybe_set_logs_root(opts, deps) do
