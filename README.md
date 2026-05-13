@@ -8,6 +8,8 @@
 
 > ⚠️ **Not affiliated with Cognition AI (Devin).** This project is a community fork of OpenAI's [Symphony](#relationship-to-symphony) reference implementation, focused on multi-tool, self-hosted agent orchestration.
 
+> 💡 **TypeScript implementation available** — see [`gxPan1006/cognit-flow`](https://github.com/gxPan1006/cognit-flow), a behavior-equivalent port of this orchestrator written in TypeScript (Node.js ≥ 20). Same WORKFLOW.md contract, same Linear / Claude / Codex integrations; swap the runtime if you prefer the Node ecosystem over BEAM.
+
 ---
 
 ## What is it?
