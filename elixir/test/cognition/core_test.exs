@@ -1032,6 +1032,55 @@ defmodule Cognition.CoreTest do
     assert prompt == "Retry #2"
   end
 
+  test "prompt builder exposes the CLI language value to the workflow template" do
+    workflow_prompt = "{% if language %}lang={{ language }}{% else %}lang=missing{% endif %}"
+    write_workflow_file!(Workflow.workflow_file_path(), prompt: workflow_prompt)
+
+    issue = %Issue{
+      identifier: "GXP-42",
+      title: "Localized workpad",
+      description: "Render in the configured language",
+      state: "Todo",
+      url: "https://example.org/issues/GXP-42",
+      labels: []
+    }
+
+    Application.put_env(:cognition, :language, "中文")
+
+    try do
+      assert PromptBuilder.build_prompt(issue) == "lang=中文"
+    after
+      Application.delete_env(:cognition, :language)
+    end
+
+    assert PromptBuilder.build_prompt(issue) == "lang=missing"
+  end
+
+  test "in-repo WORKFLOW.md renders the language preamble when --language is set" do
+    workflow_path = Workflow.workflow_file_path()
+    Workflow.set_workflow_file_path(Path.expand("WORKFLOW.md", File.cwd!()))
+    Application.put_env(:cognition, :language, "中文")
+
+    on_exit(fn ->
+      Workflow.set_workflow_file_path(workflow_path)
+      Application.delete_env(:cognition, :language)
+    end)
+
+    issue = %Issue{
+      identifier: "GXP-43",
+      title: "Localized workpad",
+      description: "Render with language preamble",
+      state: "Todo",
+      url: "https://example.org/issues/GXP-43",
+      labels: []
+    }
+
+    prompt = PromptBuilder.build_prompt(issue)
+
+    assert prompt =~ "Language preference"
+    assert prompt =~ "in 中文"
+  end
+
   test "agent runner keeps workspace after successful codex run" do
     test_root =
       Path.join(

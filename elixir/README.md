@@ -29,6 +29,12 @@ Optional flags:
 
 - `--logs-root` writes logs under a different directory, defaulting to `./log`.
 - `--port` starts the Phoenix observability service.
+- `--language` declares the language used for all Linear-facing output the agent
+  produces (workpad comment, status notes, blocker briefs). Example:
+  `--language 中文` or `--language Japanese`. Code, commit messages, PR titles,
+  branch names, and shell output stay in their natural English form. When the
+  flag is omitted no language preamble is added and the agent uses its default
+  voice. The value is also exposed to `WORKFLOW.md` as `{{ language }}`.
 
 ## Workflow Configuration
 

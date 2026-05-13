@@ -18,6 +18,7 @@ defmodule Cognition.PromptBuilder do
     |> Solid.render!(
       %{
         "attempt" => Keyword.get(opts, :attempt),
+        "language" => Config.language(),
         "issue" => issue |> Map.from_struct() |> to_solid_map()
       },
       @render_opts

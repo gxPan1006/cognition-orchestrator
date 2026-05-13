@@ -23,3 +23,5 @@ elixir/cognition-*.tar
 .env.*
 .secrets
 .credentials
+
+changelog/

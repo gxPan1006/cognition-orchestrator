@@ -41,6 +41,7 @@ defmodule Cognition.TestSupport do
         on_exit(fn ->
           Application.delete_env(:cognition, :workflow_file_path)
           Application.delete_env(:cognition, :server_port_override)
+          Application.delete_env(:cognition, :language)
           Application.delete_env(:cognition, :memory_tracker_issues)
           Application.delete_env(:cognition, :memory_tracker_recipient)
           File.rm_rf(workflow_root)

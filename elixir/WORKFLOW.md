@@ -43,6 +43,17 @@ claude:
 
 You are working on a Linear ticket `{{ issue.identifier }}`
 
+{% if language %}
+Language preference: write every piece of Linear-facing content — the persistent
+`## Cognition Workpad` comment, any other Linear comments, status notes,
+acceptance/validation checklist text, and blocker briefs — in {{ language }}.
+Keep code, file/path names, identifiers, commit messages, branch names, PR
+titles/descriptions, shell commands, and tool output in their natural English
+form. If the ticket body itself is written in another language, mirror that
+ticket's language for any quoted excerpts but keep your own workpad prose in
+{{ language }}.
+{% endif %}
+
 {% if attempt %}
 Continuation context:
 

@@ -6,7 +6,7 @@ defmodule Cognition.CLI do
   alias Cognition.LogFile
 
   @acknowledgement_switch :i_understand_that_this_will_be_running_without_the_usual_guardrails
-  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer]
+  @switches [{@acknowledgement_switch, :boolean}, logs_root: :string, port: :integer, language: :string]
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
@@ -14,6 +14,7 @@ defmodule Cognition.CLI do
           set_workflow_file_path: (String.t() -> :ok | {:error, term()}),
           set_logs_root: (String.t() -> :ok | {:error, term()}),
           set_server_port_override: (non_neg_integer() | nil -> :ok | {:error, term()}),
+          set_language: (String.t() | nil -> :ok | {:error, term()}),
           ensure_all_started: (-> ensure_started_result())
         }
 
@@ -35,14 +36,16 @@ defmodule Cognition.CLI do
       {opts, [], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps) do
+             :ok <- maybe_set_server_port(opts, deps),
+             :ok <- maybe_set_language(opts, deps) do
           run(Path.expand("WORKFLOW.md"), deps)
         end
 
       {opts, [workflow_path], []} ->
         with :ok <- require_guardrails_acknowledgement(opts),
              :ok <- maybe_set_logs_root(opts, deps),
-             :ok <- maybe_set_server_port(opts, deps) do
+             :ok <- maybe_set_server_port(opts, deps),
+             :ok <- maybe_set_language(opts, deps) do
           run(workflow_path, deps)
         end
 
@@ -72,7 +75,7 @@ defmodule Cognition.CLI do
 
   @spec usage_message() :: String.t()
   defp usage_message do
-    "Usage: cognition [--logs-root <path>] [--port <port>] [path-to-WORKFLOW.md]"
+    "Usage: cognition [--logs-root <path>] [--port <port>] [--language <name>] [path-to-WORKFLOW.md]"
   end
 
   @spec runtime_deps() :: deps()
@@ -82,6 +85,7 @@ defmodule Cognition.CLI do
       set_workflow_file_path: &Cognition.Workflow.set_workflow_file_path/1,
       set_logs_root: &set_logs_root/1,
       set_server_port_override: &set_server_port_override/1,
+      set_language: &set_language/1,
       ensure_all_started: fn -> Application.ensure_all_started(:cognition) end
     }
   end
@@ -145,6 +149,27 @@ defmodule Cognition.CLI do
 
   defp set_logs_root(logs_root) do
     Application.put_env(:cognition, :log_file, LogFile.default_log_file(logs_root))
+    :ok
+  end
+
+  defp maybe_set_language(opts, deps) do
+    case Keyword.get_values(opts, :language) do
+      [] ->
+        :ok
+
+      values ->
+        language = values |> List.last() |> String.trim()
+
+        if language == "" do
+          {:error, usage_message()}
+        else
+          :ok = deps.set_language.(language)
+        end
+    end
+  end
+
+  defp set_language(language) when is_binary(language) do
+    Application.put_env(:cognition, :language, language)
     :ok
   end
 

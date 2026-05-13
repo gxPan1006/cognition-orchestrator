@@ -25,6 +25,10 @@ defmodule Cognition.CLITest do
         send(parent, :port_set)
         :ok
       end,
+      set_language: fn _language ->
+        send(parent, :language_set)
+        :ok
+      end,
       ensure_all_started: fn ->
         send(parent, :started)
         {:ok, [:cognition]}
@@ -40,6 +44,7 @@ defmodule Cognition.CLITest do
     refute_received :workflow_set
     refute_received :logs_root_set
     refute_received :port_set
+    refute_received :language_set
     refute_received :started
   end
 
@@ -49,6 +54,7 @@ defmodule Cognition.CLITest do
       set_workflow_file_path: fn _path -> :ok end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -71,6 +77,7 @@ defmodule Cognition.CLITest do
       end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -90,6 +97,7 @@ defmodule Cognition.CLITest do
         :ok
       end,
       set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -98,12 +106,46 @@ defmodule Cognition.CLITest do
     assert expanded_path == Path.expand("tmp/custom-logs")
   end
 
+  test "accepts --language and forwards the trimmed value to runtime deps" do
+    parent = self()
+
+    deps = %{
+      file_regular?: fn _path -> true end,
+      set_workflow_file_path: fn _path -> :ok end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      set_language: fn language ->
+        send(parent, {:language, language})
+        :ok
+      end,
+      ensure_all_started: fn -> {:ok, [:cognition]} end
+    }
+
+    assert :ok = CLI.evaluate([@ack_flag, "--language", "  中文  ", "WORKFLOW.md"], deps)
+    assert_received {:language, "中文"}
+  end
+
+  test "rejects --language with an empty value" do
+    deps = %{
+      file_regular?: fn _path -> true end,
+      set_workflow_file_path: fn _path -> :ok end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
+      ensure_all_started: fn -> {:ok, [:cognition]} end
+    }
+
+    assert {:error, message} = CLI.evaluate([@ack_flag, "--language", "   ", "WORKFLOW.md"], deps)
+    assert message =~ "Usage: cognition"
+  end
+
   test "returns not found when workflow file does not exist" do
     deps = %{
       file_regular?: fn _path -> false end,
       set_workflow_file_path: fn _path -> :ok end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 
@@ -117,6 +159,7 @@ defmodule Cognition.CLITest do
       set_workflow_file_path: fn _path -> :ok end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
       ensure_all_started: fn -> {:error, :boom} end
     }
 
@@ -131,6 +174,7 @@ defmodule Cognition.CLITest do
       set_workflow_file_path: fn _path -> :ok end,
       set_logs_root: fn _path -> :ok end,
       set_server_port_override: fn _port -> :ok end,
+      set_language: fn _language -> :ok end,
       ensure_all_started: fn -> {:ok, [:cognition]} end
     }
 

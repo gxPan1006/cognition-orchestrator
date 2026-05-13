@@ -91,6 +91,20 @@ defmodule Cognition.Config do
     end
   end
 
+  @spec language() :: String.t() | nil
+  def language do
+    case Application.get_env(:cognition, :language) do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> nil
+          trimmed -> trimmed
+        end
+
+      _ ->
+        nil
+    end
+  end
+
   @spec validate!() :: :ok | {:error, term()}
   def validate! do
     with {:ok, settings} <- settings() do
