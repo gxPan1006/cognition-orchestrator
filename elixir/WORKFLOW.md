@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: linear
-  project_slug: "d5b27b125677"
+  project_slug: "REPLACE_WITH_YOUR_LINEAR_PROJECT_SLUG"
   active_states:
     - Todo
     - In Progress
@@ -19,7 +19,7 @@ workspace:
   root: ~/code/cognition-workspaces
 hooks:
   after_create: |
-    git clone /Users/guoxunpan/code/cognition .
+    git clone https://github.com/GuoxunPan/cognition-orchestrator.git .
     if command -v mise >/dev/null 2>&1; then
       cd elixir && mise trust && mise exec -- mix deps.get
     fi
@@ -31,7 +31,7 @@ agent:
 coding_tool:
   kind: codex
 codex:
-  command: CODEX_HOME=/Users/guoxunpan/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=low app-server
+  command: CODEX_HOME=$HOME/.cognition-codex-runtime codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=low app-server
   approval_policy: never
   stall_timeout_ms: 180000
   thread_sandbox: danger-full-access

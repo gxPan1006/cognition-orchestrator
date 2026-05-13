@@ -24,4 +24,7 @@ elixir/cognition-*.tar
 .secrets
 .credentials
 
+.claude/
+.codex/sessions/
+
 changelog/
